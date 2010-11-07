@@ -148,12 +148,12 @@ sub format {
     # make real format
     my $format = join '', keys %formats;
     $self->{format} =~ 
-      s/%(-?\d*(?:\.\d+)?)([$format])/replace($self, $1, $2);/gex;
+      s/%(-?\d*(?:\.\d+)?)([$format])/_replace($self, $1, $2);/gex;
       # thanks, mschilli
     return $self->{format};
 }
 
-sub replace {
+sub _replace {
     my ( $self, $num, $op ) = @_;
     return '%%' if $op eq '%';
     return "%%$op" unless defined $formats{$op};
@@ -182,7 +182,7 @@ sub AUTOLOAD {
     my $tmp = '';
     $tmp .= sprintf ( 
         $self->{format}, 
-        $self->mk_args( $method, $_ ),
+        $self->_mk_args( $method, $_ ),
     ) foreach @_;
     my $ret;
     {
@@ -193,7 +193,7 @@ sub AUTOLOAD {
     return $ret;
 }
 
-sub mk_args {
+sub _mk_args {
     my $self = shift;
     my ( $method, $msg ) = @_;
     $msg = '' unless defined $msg;
@@ -207,6 +207,13 @@ sub mk_args {
 }
 
 sub DESTROY { close LOG or warn "Couldn't close log file: $!"; }
+
+=head2 errstr
+
+Called as a class method, C< Log::Tiny->errstr > reveals the 
+error that Log::Tiny encountered in creation or invocation.
+
+=cut
 
 sub errstr { $errstr; }
 sub _error { $errstr = shift; undef; }
