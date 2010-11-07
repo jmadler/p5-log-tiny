@@ -9,11 +9,11 @@ Log::Tiny - Log data with as little code as possible
 
 =head1 VERSION
 
-Version 0.01
+Version 0.9
 
 =cut
 
-$VERSION = '0.01';
+$VERSION = '0.9';
 $errstr = '';
 
 %formats = (
@@ -287,7 +287,7 @@ Log::Log4perl.
 
 =head1 COPYRIGHT & LICENSE
 
-Copyright 2007 Jordan M. Adler, all rights reserved.
+Copyright 2007-2010 Jordan M. Adler, all rights reserved.
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
