@@ -94,9 +94,9 @@ a peek inside the source of this module will tell you, sprintf
 is used internally.  However, be advised that these log formats 
 B<are not sprintf>.
 
-Interpolated data are specified by an octothorpe (hash, "pound sign",
-etc.), followed by a character.  A literal octothorpe can be 
-specified via two octothorpes in succession.  You may use any
+Interpolated data are specified by an percent sign (C< % >), 
+followed by a character.  A literal percent sign can be 
+specified via two in succession ( C< %% > ).  You may use any
 of the formatting attributes as noted in L<perlfunc>, under 
 "sprintf" (C<perldoc -f sprintf>).
 
