@@ -83,6 +83,7 @@ sub new {
         return _error( "Could not open $logfile: $!" );
     my $self = bless { 
         format => $format,
+        methods_only => [],
     }, $pkg;
     $self->format();
     return $self;
@@ -181,6 +182,14 @@ sub AUTOLOAD {
     $method =~ s/.*:://;
     return _error( "Log routine ($method) is not a class method" ) 
         unless defined ref $self;
+    if (@{ $self->{methods_only} }) { 
+        my $in = 0;
+        foreach (@{ $self->{methods_only} }) {
+            $in++ if uc $method eq uc $_;
+        }
+        return _error( "Log category '$method' not in whitelist" ) 
+          unless $in;
+    }
     my $tmp = '';
     $tmp .= sprintf ( 
         $self->{format}, 
@@ -219,6 +228,17 @@ error that Log::Tiny encountered in creation or invocation.
 
 sub errstr { $errstr; }
 sub _error { $errstr = shift; undef; }
+
+=head2 log_only
+
+Log only the given categories
+
+=cut
+
+sub log_only {
+    my $self = shift;
+    $self->{methods_only} = \@_;
+}
 
 =head1 AUTHOR
 
