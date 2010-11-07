@@ -6,7 +6,10 @@ BEGIN {
 	use_ok( 'Log::Tiny' );
 }
 
-my $filename = 'example.log';
+my $filename = "example.$$.log";
+if ( -e $filename ) { 
+    die "Error, '$filname' exists";
+}
 
 my $log = Log::Tiny->new($filename, "(%-5c) %m\n") or die 'Could not log! (' . Log::Tiny->errstr . ')'; 
 # ^ don't use system newlines because log in DATA fh may not match (generated with \n)
@@ -22,7 +25,7 @@ $log->DEBUG("Finishing...");
 $debug++;
 undef $log;
 
-open (my $fh, '<', 'example.log') or die "Could not open log for slurping: $!";
+open (my $fh, '<', $filename) or die "Could not open log for slurping: $!";
 my $logtext = do { local( $/ ); <$fh> };
 close $fh or die "Could not close log: $!";
 

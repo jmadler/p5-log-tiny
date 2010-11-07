@@ -29,7 +29,7 @@ $errstr = '';
     p => [ 'd', sub { $$ }, ],              # pid: $$
     P => [ 's', sub { (caller(2))[0] }, ],  # caller_pkg: caller
     r => [ 'd', sub { time - $^T }, ],      # runtime: $^T
-    S => [ 's', sub { (caller(2))[3] }, ],  # caller_sub: caller
+    S => [ 's', \&__format_S, sub { my $t = (caller(2))[3];  }, ],  # caller_sub: caller
     t => [ 's', sub { scalar localtime }, ],# localtime: scalar localtime
     T => [ 'd', sub { time }, ],            # unix_time: time
     u => [ 'd', sub { $> }, ],              # effective_uid: $>
@@ -37,6 +37,8 @@ $errstr = '';
     v => [ 'd', sub { $] }, ],              # long_perl_ver: $]
     V => [ 's', sub { sprintf("%vd", $^V) }, ], # short_perl_ver
 );
+
+sub __format_S { my $t = (caller(2))[3];  if ( $t eq 'Log::Tiny::AUTOLOAD' ) { $t = 'main'; }; $t;  }
 
 =head1 SYNOPSIS
 

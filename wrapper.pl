@@ -5,7 +5,7 @@ use strict;
 use lib 'lib';
 use Log::Tiny;
 
-my $log = Log::Tiny->new('example.log', '%F %P %S (%-5c) %m%n') or die 'Could not log! (' . Log::Tiny->errstr . ')';
+my $log = Log::Tiny2->new('example.log', '%F %P %S (%-5c) %m%n') or die 'Could not log! (' . Log::Tiny->errstr . ')';
 my ($warn, $error, $trace, $debug) = (0, 0, 0, 0);
 $log->DEBUG("Starting...");
 $debug++;
@@ -18,3 +18,8 @@ $debug++;
 
 print "debug $debug, warn $warn, trace $trace, error $error\n";
 
+package Log::Tiny2;
+use Log::Tiny;
+use base 'Log::Tiny';
+
+package main;
