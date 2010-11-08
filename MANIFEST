@@ -1,8 +1,13 @@
 Changes
-MANIFEST
-Makefile.PL
-README
+example.pl
 lib/Log/Tiny.pm
+Makefile.PL
+MANIFEST
+README
 t/00-load.t
+t/01-log.t
+t/02-wrapper.t
+t/03-exclude.t
 t/pod-coverage.t
 t/pod.t
+wrapper.pl

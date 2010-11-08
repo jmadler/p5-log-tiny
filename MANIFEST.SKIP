@@ -1,0 +1,6 @@
+^.git/*
+^.cvsignore$
+^Makefile$
+^Makefile.old$
+^MANIFEST\.SKIP$
+^MANIFEST\.bak$
