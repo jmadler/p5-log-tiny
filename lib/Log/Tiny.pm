@@ -79,11 +79,12 @@ sub new {
     my $pkg = shift;
     my $logfile = shift || return _error('No logfile provided');
     my $format = shift || '[%t] %f:%p (%c) %m%n';
-    open ( LOG, '>>' . $logfile ) || 
+    open (my $logfh, '>>' . $logfile ) || 
         return _error( "Could not open $logfile: $!" );
     my $self = bless { 
         format => $format,
         methods_only => [],
+        logfile => $logfh,
     }, $pkg;
     $self->format();
     return $self;
@@ -198,7 +199,7 @@ sub AUTOLOAD {
     my $ret;
     {
         my $autoflush = $|++;
-        $ret = print LOG $tmp;
+        $ret = print $self->{logfh} $tmp;
         $| = $autoflush;
     }
     return $ret;
@@ -217,7 +218,7 @@ sub _mk_args {
     return @ret;
 }
 
-sub DESTROY { close LOG or warn "Couldn't close log file: $!"; }
+sub DESTROY { close shift->{logfh} or warn "Couldn't close log file: $!"; }
 
 =head2 errstr
 

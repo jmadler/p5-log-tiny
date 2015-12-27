@@ -1,0 +1,39 @@
+#!perl -T
+
+use warnings;
+use strict;
+use Test::More tests => 10; # 5 tests, 2 files
+
+BEGIN {
+    use_ok( 'Log::Tiny' );
+}
+
+my @files = ("example-1.$$.log", "example-2.$$.log");
+for my $filename (@files) {
+    if ( -e $filename ) { 
+        die "Error, '$filename' exists";
+    }
+}
+
+my @logs;
+
+for my $filename (@files) {
+    my $log = Log::Tiny->new($filename, "(%-5c) %m\n") or die 'Could not log! (' . Log::Tiny->errstr . ')'; 
+    # ^ don't use system newlines because log in DATA fh may not match (generated with \n)
+    push @log, $log;
+}
+isa_ok( $_, 'Log::Tiny' ) for @logs;
+my $i = 0;
+$_->WARN( 'warn' . ++$i ) for @logs;
+$_->TRACE( 'trace' . ++$i ) for @logs;
+$_->DEBUG("Finishing...") for @logs;
+undef for @logs;
+
+for my $filename (@files) {
+    open (my $fh, '<', $filename) or die "Could not open log for slurping: $!";
+    my $logtext = do { local( $/ ); <$fh> };
+    like($logtext, qr/warn/, "Does log include log text: warn");
+    like($logtext, qr/trace/, "Does log include log text: trace");
+    is( unlink( $filename ), 1, "Remove $filename" );
+    ok( !-e $filename, "Actually gone" );
+}
