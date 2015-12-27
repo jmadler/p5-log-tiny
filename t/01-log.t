@@ -1,5 +1,7 @@
 #!perl -T
 
+use strict;
+use warnings;
 use Test::More tests => 5;
 
 BEGIN {
@@ -8,7 +10,7 @@ BEGIN {
 
 my $filename = "example.$$.log";
 if ( -e $filename ) { 
-    die "Error, '$filname' exists";
+    die "Error, '$filename' exists";
 }
 
 my $log = Log::Tiny->new($filename, "(%-5c) %m\n") or die 'Could not log! (' . Log::Tiny->errstr . ')'; 
