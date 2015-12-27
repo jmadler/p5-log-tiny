@@ -9,11 +9,11 @@ Log::Tiny - Log data with as little code as possible
 
 =head1 VERSION
 
-Version 0.9
+Version 1.0
 
 =cut
 
-$VERSION = '0.9';
+$VERSION = '1.0';
 $errstr = '';
 
 %formats = (
@@ -280,16 +280,20 @@ L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=Log-Tiny>
 
 L<http://search.cpan.org/dist/Log-Tiny>
 
+=item * GitHub
+
+L<https://github.com/jmadler/p5-log-tiny>
+
 =back
 
 =head1 ACKNOWLEDGEMENTS
 
 Much thanks to Michael Schilli C<CPAN:mschilli> for his great work on 
-Log::Log4perl.
+Log::Log4perl, of which this module's formatting concept is largely based upon.
 
 =head1 COPYRIGHT & LICENSE
 
-Copyright 2007-2010 Jordan M. Adler, all rights reserved.
+Copyright 2007-2015 Jordan M. Adler, all rights reserved.
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
