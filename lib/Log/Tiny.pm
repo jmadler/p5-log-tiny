@@ -84,7 +84,8 @@ sub new {
     my $self = bless { 
         format => $format,
         methods_only => [],
-        logfile => $logfh,
+        logfile => $logfile,
+        logfh => $logfh,
     }, $pkg;
     $self->format();
     return $self;
@@ -199,7 +200,7 @@ sub AUTOLOAD {
     my $ret;
     {
         my $autoflush = $|++;
-        $ret = print $self->{logfh} $tmp;
+        $ret = print {$self->{logfh}} $tmp;
         $| = $autoflush;
     }
     return $ret;
