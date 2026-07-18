@@ -3,7 +3,12 @@ package Log::Tiny;
 use strict;
 use warnings;
 use Scalar::Util ();
-our ($AUTOLOAD, $VERSION, $errstr, %formats);
+our ($AUTOLOAD, $VERSION, $errstr, %formats, $caller_depth);
+
+# Extra caller frames to skip for the %F/%L/%P/%S formats. Wrapper
+# authors can `local $Log::Tiny::caller_depth = 1;` (etc.) so those
+# formats report their own caller rather than the wrapper.
+$caller_depth = 0;
 
 =head1 NAME
 
@@ -22,14 +27,14 @@ $errstr = '';
     c => [ 's', sub { shift }, ],           # category: AUTOLOAD
     C => [ 's', sub { lc shift }, ],        # lcategory: AUTOLOAD lc
     f => [ 's', sub { $0 }, ],              # program_file: $0
-    F => [ 's', sub { (caller(2))[1] }, ],  # caller_file: caller
+    F => [ 's', sub { (caller(2 + $caller_depth))[1] }, ],  # caller_file: caller
     g => [ 's', sub { scalar gmtime }, ],   # gmtime: scalar gmtime
-    L => [ 'd', sub { (caller(2))[2] }, ],  # caller_line: caller
+    L => [ 'd', sub { (caller(2 + $caller_depth))[2] }, ],  # caller_line: caller
     m => [ 's', sub { shift; shift }, ],    # message: args
     n => [ 's', sub { $/ }, ],              # newline: $/
     o => [ 's', sub { $^O }, ],             # osname: $^O
     p => [ 'd', sub { $$ }, ],              # pid: $$
-    P => [ 's', sub { (caller(2))[0] }, ],  # caller_pkg: caller
+    P => [ 's', sub { (caller(2 + $caller_depth))[0] }, ],  # caller_pkg: caller
     r => [ 'd', sub { time - $^T }, ],      # runtime: $^T
     S => [ 's', \&__format_S, ],            # caller_sub: caller
     t => [ 's', sub { scalar localtime }, ],# localtime: scalar localtime
@@ -40,7 +45,7 @@ $errstr = '';
     V => [ 's', sub { sprintf("%vd", $^V) }, ], # short_perl_ver
 );
 
-sub __format_S { my $t = (caller(2))[3];  if ( $t eq 'Log::Tiny::AUTOLOAD' ) { $t = 'main'; }; $t;  }
+sub __format_S { my $t = (caller(2 + $caller_depth))[3];  if ( !defined $t || $t eq 'Log::Tiny::AUTOLOAD' ) { $t = 'main'; }; $t;  }
 
 =head1 SYNOPSIS
 
@@ -89,6 +94,11 @@ destroyed -- handy for logging to C<\*STDERR> or a handle you manage;
 
 =back
 
+An optional third argument is a hash reference of format specifications
+that are merged over (and so may extend or override) the defaults for
+this object only.  The format table is snapshotted per-instance, so
+customising one Log::Tiny object never affects another.
+
 =cut
 
 sub new {
@@ -96,6 +106,12 @@ sub new {
     my $logfile = shift;
     return _error('No logfile provided') unless defined $logfile && length $logfile;
     my $format = shift || '[%t] %f:%p (%c) %m%n';
+    my $custom = shift;   # optional hashref of extra/override format specs
+
+    # snapshot the format table per-instance so customisation does not
+    # leak across objects (the package %formats stays the default template)
+    my %fmt = %formats;
+    %fmt = ( %fmt, %$custom ) if ref $custom eq 'HASH';
 
     my ( $logfh, $owns_fh );
     if ( defined Scalar::Util::openhandle($logfile) ) {
@@ -117,6 +133,7 @@ sub new {
         logfile => $logfile,
         logfh => $logfh,
         owns_fh => $owns_fh,
+        formats => \%fmt,
     }, $pkg;
     $self->format();
     return $self;
@@ -182,7 +199,7 @@ sub format {
     }
     $self->{args} = [];
     # make real format
-    my $format = join '', keys %formats;
+    my $format = join '', keys %{ $self->{formats} };
     $self->{format} =~ 
       s/%(-?\d*(?:\.\d+)?)([$format])/_replace($self, $1, $2);/gex;
       # thanks, mschilli
@@ -192,9 +209,9 @@ sub format {
 sub _replace {
     my ( $self, $num, $op ) = @_;
     return '%%' if $op eq '%';
-    return "%%$op" unless defined $formats{$op};
+    return "%%$op" unless defined $self->{formats}{$op};
     push @{ $self->{args} }, $op;
-    return "%$num" . $formats{$op}->[ 0 ];
+    return "%$num" . $self->{formats}{$op}->[ 0 ];
 }
 
 =head2 WHATEVER_YOU_WANT (log a message)
@@ -238,7 +255,7 @@ sub _mk_args {
     my @ret = @{ $self->{args} };
     my %need = map { $_ => undef } @ret;
     foreach ( keys %need ) {
-        $need{ $_ } = $formats{ $_ }->[ 1 ]->( $method, $msg );
+        $need{ $_ } = $self->{formats}{ $_ }->[ 1 ]->( $method, $msg );
     }
     s/^(\w)$/$need{$1}/e foreach @ret;
     return @ret;
@@ -261,6 +278,19 @@ error that Log::Tiny encountered in creation or invocation.
 
 sub errstr { $errstr; }
 sub _error { $errstr = shift; undef; }
+
+=head2 Caller depth (C<$Log::Tiny::caller_depth>)
+
+The C<%F>, C<%L>, C<%P> and C<%S> formats report the file, line,
+package and subroutine of the code that called the log method.  If you
+wrap your logging in a helper of your own, that helper becomes the
+apparent caller.  As with L<Log::Log4perl>, localise
+C<$Log::Tiny::caller_depth> to skip the extra frame(s):
+
+    sub my_log {
+        local $Log::Tiny::caller_depth = 1;
+        $log->INFO( @_ );
+    }
 
 =head2 log_only
 

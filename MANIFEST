@@ -10,6 +10,8 @@ t/02-wrapper.t
 t/03-exclude.t
 t/05-open.t
 t/06-filehandle.t
+t/07-caller-depth.t
+t/08-formats.t
 t/pod-coverage.t
 t/pod.t
 wrapper.pl
