@@ -8,6 +8,7 @@ t/00-load.t
 t/01-log.t
 t/02-wrapper.t
 t/03-exclude.t
+t/05-open.t
 t/pod-coverage.t
 t/pod.t
 wrapper.pl
