@@ -2,6 +2,7 @@ package Log::Tiny;
 
 use strict;
 use warnings;
+use Scalar::Util ();
 our ($AUTOLOAD, $VERSION, $errstr, %formats);
 
 =head1 NAME
@@ -71,23 +72,51 @@ Its use is very straight forward:
 
 =head2 new
 
-Create a new Log::Tiny object.  You must define a log file
-to append to, and, optionally, a format.
+Create a new Log::Tiny object.  The first argument is the log
+destination and, optionally, a format follows.
+
+The destination may be:
+
+=over 4
+
+=item * a filename, which is opened for append (the common case);
+
+=item * an already-open filehandle (glob, glob ref or IO::Handle
+object), which is used as-is and B<not> closed when the object is
+destroyed -- handy for logging to C<\*STDERR> or a handle you manage;
+
+=item * the string C<"-">, which logs to C<STDOUT>.
+
+=back
 
 =cut
 
 sub new {
     my $pkg = shift;
-    my $logfile = shift || return _error('No logfile provided');
+    my $logfile = shift;
+    return _error('No logfile provided') unless defined $logfile && length $logfile;
     my $format = shift || '[%t] %f:%p (%c) %m%n';
-    open (my $logfh, '>>', $logfile ) ||
-        return _error( "Could not open $logfile: $!" );
+
+    my ( $logfh, $owns_fh );
+    if ( defined Scalar::Util::openhandle($logfile) ) {
+        # caller passed an already-open handle: use it, and don't close it
+        $logfh   = $logfile;
+        $owns_fh = 0;
+    } elsif ( $logfile eq '-' ) {
+        $logfh   = \*STDOUT;
+        $owns_fh = 0;
+    } else {
+        open ( $logfh, '>>', $logfile ) ||
+            return _error( "Could not open $logfile: $!" );
+        $owns_fh = 1;
+    }
     $logfh->autoflush(1);
-    my $self = bless { 
+    my $self = bless {
         format => $format,
         methods_only => [],
         logfile => $logfile,
         logfh => $logfh,
+        owns_fh => $owns_fh,
     }, $pkg;
     $self->format();
     return $self;
@@ -215,7 +244,13 @@ sub _mk_args {
     return @ret;
 }
 
-sub DESTROY { close shift->{logfh} or warn "Couldn't close log file: $!"; }
+sub DESTROY {
+    my $self = shift;
+    # only close handles we opened ourselves; leave caller-supplied
+    # handles (STDERR, STDOUT, etc.) alone
+    return unless $self->{owns_fh};
+    close $self->{logfh} or warn "Couldn't close log file: $!";
+}
 
 =head2 errstr
 
