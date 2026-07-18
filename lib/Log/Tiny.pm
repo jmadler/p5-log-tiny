@@ -237,8 +237,14 @@ sub AUTOLOAD {
         foreach (@{ $self->{methods_only} }) {
             $in++ if uc $method eq uc $_;
         }
-        return _error( "Log category '$method' not in whitelist" ) 
+        return _error( "Log category '$method' not in whitelist" )
           unless $in;
+    }
+    # severity threshold (only when levels()/min_level() are configured);
+    # categories that are not ranked always pass through
+    if ( defined $self->{min_level} && $self->{level_map} ) {
+        my $lvl = $self->{level_map}{ uc $method };
+        return 0 if defined $lvl && $lvl < $self->{min_level};
     }
     my $tmp = '';
     $tmp .= sprintf ( 
@@ -301,6 +307,56 @@ Log only the given categories
 sub log_only {
     my $self = shift;
     $self->{methods_only} = \@_;
+}
+
+=head2 levels
+
+Define an ordered list of severities, least to most severe:
+
+    $log->levels( [qw(DEBUG INFO WARN ERROR FATAL)] );
+
+Level names are compared case-insensitively.  On their own, levels do
+nothing; combine with L</min_level> to filter.  This is independent of
+L</log_only> (which whitelists exact categories).
+
+=cut
+
+sub levels {
+    my $self = shift;
+    my $list = shift;
+    return _error('levels() expects an array reference')
+        unless ref $list eq 'ARRAY';
+    my %map;
+    my $i = 0;
+    $map{ uc $_ } = $i++ for @$list;
+    $self->{level_map} = \%map;
+    return $self->{level_map};
+}
+
+=head2 min_level
+
+Get or set the minimum severity that will be logged.  Categories at or
+above the threshold are logged; those below it are dropped; categories
+not present in the L</levels> list are always logged.
+
+    $log->min_level('WARN');   # set
+    my $current = $log->min_level;   # get (undef if unset)
+
+Requires L</levels> to have been called first.  Returns C<undef> (and
+sets L</errstr>) for an unknown level name.
+
+=cut
+
+sub min_level {
+    my $self = shift;
+    return $self->{min_level_name} unless @_;   # getter
+    my $name = uc shift;
+    my $map = $self->{level_map}
+        or return _error('Call levels() before min_level()');
+    return _error("Unknown level '$name'") unless exists $map->{$name};
+    $self->{min_level}      = $map->{$name};
+    $self->{min_level_name} = $name;
+    return $name;
 }
 
 =head1 AUTHOR
