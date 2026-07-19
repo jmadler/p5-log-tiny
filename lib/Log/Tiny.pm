@@ -16,11 +16,11 @@ Log::Tiny - Log data with as little code as possible
 
 =head1 VERSION
 
-Version 1.1
+Version 1.2
 
 =cut
 
-$VERSION = '1.1';
+$VERSION = '1.2';
 $errstr = '';
 
 %formats = (
