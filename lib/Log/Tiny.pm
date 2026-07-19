@@ -1,7 +1,9 @@
 package Log::Tiny;
 
 use strict;
-use vars qw($AUTOLOAD $VERSION $errstr %formats);
+use warnings;
+use Scalar::Util ();
+our ($AUTOLOAD, $VERSION, $errstr, %formats);
 
 =head1 NAME
 
@@ -29,7 +31,7 @@ $errstr = '';
     p => [ 'd', sub { $$ }, ],              # pid: $$
     P => [ 's', sub { (caller(2))[0] }, ],  # caller_pkg: caller
     r => [ 'd', sub { time - $^T }, ],      # runtime: $^T
-    S => [ 's', \&__format_S, sub { my $t = (caller(2))[3];  }, ],  # caller_sub: caller
+    S => [ 's', \&__format_S, ],            # caller_sub: caller
     t => [ 's', sub { scalar localtime }, ],# localtime: scalar localtime
     T => [ 'd', sub { time }, ],            # unix_time: time
     u => [ 'd', sub { $> }, ],              # effective_uid: $>
@@ -43,7 +45,7 @@ sub __format_S { my $t = (caller(2))[3];  if ( $t eq 'Log::Tiny::AUTOLOAD' ) { $
 =head1 SYNOPSIS
 
 This module aims to be a light-weight implementation 
-*similiar* to L<Log::Log4perl> for logging data to a file.
+*similar* to L<Log::Log4perl> for logging data to a file.
 
 Its use is very straight forward:
 
@@ -70,23 +72,51 @@ Its use is very straight forward:
 
 =head2 new
 
-Create a new Log::Tiny object.  You must define a log file
-to append to, and, optionally, a format.
+Create a new Log::Tiny object.  The first argument is the log
+destination and, optionally, a format follows.
+
+The destination may be:
+
+=over 4
+
+=item * a filename, which is opened for append (the common case);
+
+=item * an already-open filehandle (glob, glob ref or IO::Handle
+object), which is used as-is and B<not> closed when the object is
+destroyed -- handy for logging to C<\*STDERR> or a handle you manage;
+
+=item * the string C<"-">, which logs to C<STDOUT>.
+
+=back
 
 =cut
 
 sub new {
     my $pkg = shift;
-    my $logfile = shift || return _error('No logfile provided');
+    my $logfile = shift;
+    return _error('No logfile provided') unless defined $logfile && length $logfile;
     my $format = shift || '[%t] %f:%p (%c) %m%n';
-    open (my $logfh, '>>' . $logfile ) || 
-        return _error( "Could not open $logfile: $!" );
+
+    my ( $logfh, $owns_fh );
+    if ( defined Scalar::Util::openhandle($logfile) ) {
+        # caller passed an already-open handle: use it, and don't close it
+        $logfh   = $logfile;
+        $owns_fh = 0;
+    } elsif ( $logfile eq '-' ) {
+        $logfh   = \*STDOUT;
+        $owns_fh = 0;
+    } else {
+        open ( $logfh, '>>', $logfile ) ||
+            return _error( "Could not open $logfile: $!" );
+        $owns_fh = 1;
+    }
     $logfh->autoflush(1);
-    my $self = bless { 
+    my $self = bless {
         format => $format,
         methods_only => [],
         logfile => $logfile,
         logfh => $logfh,
+        owns_fh => $owns_fh,
     }, $pkg;
     $self->format();
     return $self;
@@ -95,7 +125,7 @@ sub new {
 =head2 format
 
 You may, at any time, change the format.  The log format is 
-similiar in style to the sprintf you know and love; and, as 
+similar in style to the sprintf you know and love; and, as 
 a peek inside the source of this module will tell you, sprintf
 is used internally.  However, be advised that these log formats 
 B<are not sprintf>.
@@ -107,7 +137,7 @@ of the formatting attributes as noted in L<perlfunc>, under
 "sprintf" (C<perldoc -f sprintf>).
 
 Internally, the format routine uses a data structure (hash) 
-that can be seen near the beggining of this package.  Any 
+that can be seen near the beginning of this package.  Any 
 unrecognized interpolation variables will be returned 
 literally.  This means that, assuming $format{d} does not 
 exist, "%d" in your format will result in "%d" being outputted
@@ -141,7 +171,7 @@ usage, however.  They are (currently) as follows:
 See L<perlvar> for information on the used global variables, and 
 L<perlfunc> (under "caller") or C<perldoc -f caller> for information
 on the "calling" variables.  Oh, and make sure you add %n if you want
-newines.
+newlines.
 
 =cut
 
@@ -172,7 +202,7 @@ sub _replace {
 This method is whatever you want it to be.  Any method called
 on a Log::Tiny object that is not reserved will be considered 
 an attempt to log in the category named the same as the method 
-that was caleld.  Currently, only in-use methods are reserved;
+that was called.  Currently, only in-use methods are reserved;
 However, to account for expansion, please only use uppercase 
 categories.  See formats above for information on customizing
 the log messages.
@@ -214,7 +244,13 @@ sub _mk_args {
     return @ret;
 }
 
-sub DESTROY { close shift->{logfh} or warn "Couldn't close log file: $!"; }
+sub DESTROY {
+    my $self = shift;
+    # only close handles we opened ourselves; leave caller-supplied
+    # handles (STDERR, STDOUT, etc.) alone
+    return unless $self->{owns_fh};
+    close $self->{logfh} or warn "Couldn't close log file: $!";
+}
 
 =head2 errstr
 
