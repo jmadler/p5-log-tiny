@@ -9,6 +9,8 @@ Revision history for Log-Tiny
         * Optional severity-level threshold filtering.
         * Add cpanfile and GitHub Actions CI (perl 5.16 - latest).
         * Fix POD typos and remove dead code in the %formats 'S' entry.
+        * Emit unrecognised %-codes literally (e.g. %d), as documented,
+          instead of letting the internal sprintf consume them.
 
 1.1     Tue Jan  4 2022 23:44 UTC
         * Fix bug with buffering output to file.
