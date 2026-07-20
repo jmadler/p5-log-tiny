@@ -3,7 +3,9 @@ package Log::Tiny;
 use strict;
 use warnings;
 use Scalar::Util ();
-our ($AUTOLOAD, $VERSION, $errstr, %formats, $caller_depth);
+use POSIX ();
+use Carp ();
+our ($AUTOLOAD, $VERSION, $errstr, %formats, $caller_depth, $easy);
 
 # Extra caller frames to skip for the %F/%L/%P/%S formats. Wrapper
 # authors can `local $Log::Tiny::caller_depth = 1;` (etc.) so those
@@ -16,16 +18,17 @@ Log::Tiny - Log data with as little code as possible
 
 =head1 VERSION
 
-Version 1.2
+Version 1.3
 
 =cut
 
-$VERSION = '1.2';
+$VERSION = '1.3';
 $errstr = '';
 
 %formats = (
     c => [ 's', sub { shift }, ],           # category: AUTOLOAD
     C => [ 's', sub { lc shift }, ],        # lcategory: AUTOLOAD lc
+    D => [ 's', \&__format_D, ],            # strftime date: %D{...}
     f => [ 's', sub { $0 }, ],              # program_file: $0
     F => [ 's', sub { (caller(2 + $caller_depth))[1] }, ],  # caller_file: caller
     g => [ 's', sub { scalar gmtime }, ],   # gmtime: scalar gmtime
@@ -46,6 +49,14 @@ $errstr = '';
 );
 
 sub __format_S { my $t = (caller(2 + $caller_depth))[3];  if ( !defined $t || $t eq 'Log::Tiny::AUTOLOAD' ) { $t = 'main'; }; $t;  }
+
+# %D{...} -> POSIX::strftime with the brace pattern (ISO-ish default when
+# no pattern given). The third arg is the per-occurrence brace contents.
+sub __format_D {
+    my ( undef, undef, $pattern ) = @_;
+    $pattern = '%Y-%m-%d %H:%M:%S' unless defined $pattern && length $pattern;
+    return POSIX::strftime( $pattern, localtime );
+}
 
 =head1 SYNOPSIS
 
@@ -166,6 +177,8 @@ usage, however.  They are (currently) as follows:
 
     c => category       => The method called (see below for more info)
     C => lcategory      => lowercase category
+    D => date (strftime)=> %D{...} formats now() with the brace strftime
+                           pattern (default "%Y-%m-%d %H:%M:%S")
     f => program_file   => Value of $0
     F => caller_file    => Calling file
     g => gmtime         => Output of scalar L<gmtime> (localized date string)
@@ -205,16 +218,17 @@ sub format {
     # for them. Matching any trailing char -- not just known codes -- is what
     # makes unknown codes come out literally, as the POD promises.
     $self->{format} =~
-      s/%(-?\d*(?:\.\d+)?)(.)/_replace($self, $1, $2);/gexs;
+      s/%(-?\d*(?:\.\d+)?)(?:([A-Za-z])\{([^}]*)\}|(.))/_replace($self, $1, $2, $3, $4)/gexs;
       # thanks, mschilli
     return $self->{format};
 }
 
 sub _replace {
-    my ( $self, $num, $op ) = @_;
+    my ( $self, $num, $braceop, $arg, $op ) = @_;
+    $op = $braceop if defined $braceop;   # %X{...} form
     return '%%' if $op eq '%';
     return "%%$num$op" unless defined $self->{formats}{$op};
-    push @{ $self->{args} }, $op;
+    push @{ $self->{args} }, [ $op, $arg ];
     return "%$num" . $self->{formats}{$op}->[ 0 ];
 }
 
@@ -234,41 +248,56 @@ sub AUTOLOAD {
     my $self = shift;
     my $method = $AUTOLOAD;
     $method =~ s/.*:://;
-    return _error( "Log routine ($method) is not a class method" ) 
+    return _error( "Log routine ($method) is not a class method" )
         unless defined ref $self;
-    if (@{ $self->{methods_only} }) { 
-        my $in = 0;
-        foreach (@{ $self->{methods_only} }) {
-            $in++ if uc $method eq uc $_;
-        }
-        return _error( "Log category '$method' not in whitelist" )
-          unless $in;
-    }
-    # severity threshold (only when levels()/min_level() are configured);
-    # categories that are not ranked always pass through
-    if ( defined $self->{min_level} && $self->{level_map} ) {
-        my $lvl = $self->{level_map}{ uc $method };
-        return 0 if defined $lvl && $lvl < $self->{min_level};
-    }
+    # skip anything filtered out by log_only() / min_level()
+    return 0 unless $self->would_log( $method );
     my $tmp = '';
-    $tmp .= sprintf ( 
-        $self->{format}, 
-        $self->_mk_args( $method, $_ ),
-    ) foreach @_;
+    foreach my $msg ( @_ ) {
+        # lazy messages: a coderef is only invoked once we know the
+        # message will actually be logged (we are past the threshold).
+        $msg = $msg->() if ref $msg eq 'CODE';
+        $tmp .= sprintf( $self->{format}, $self->_mk_args( $method, $msg ) );
+    }
     return print {$self->{logfh}} $tmp;
+}
+
+=head2 would_log
+
+Returns true if a message logged under the given category would actually
+be emitted (i.e. it passes both L</log_only> and L</min_level>).  Use it
+to guard expensive work:
+
+    $log->DEBUG( sub { expensive_dump() } );   # or:
+    $log->DEBUG( pricey() ) if $log->would_log('DEBUG');
+
+Passing a code reference as the message (above) is usually simpler: the
+sub is only called when the message would be logged.
+
+=cut
+
+sub would_log {
+    my ( $self, $category ) = @_;
+    $category = '' unless defined $category;
+    if ( @{ $self->{methods_only} } ) {
+        my $in = grep { uc $category eq uc $_ } @{ $self->{methods_only} };
+        return !!0 unless $in;
+    }
+    if ( defined $self->{min_level} && $self->{level_map} ) {
+        my $lvl = $self->{level_map}{ uc $category };
+        return !!0 if defined $lvl && $lvl < $self->{min_level};
+    }
+    return !!1;
 }
 
 sub _mk_args {
     my $self = shift;
     my ( $method, $msg ) = @_;
     $msg = '' unless defined $msg;
-    my @ret = @{ $self->{args} };
-    my %need = map { $_ => undef } @ret;
-    foreach ( keys %need ) {
-        $need{ $_ } = $self->{formats}{ $_ }->[ 1 ]->( $method, $msg );
-    }
-    s/^(\w)$/$need{$1}/e foreach @ret;
-    return @ret;
+    # compute each captured code in format order; $_->[1] is the optional
+    # brace argument (e.g. the strftime pattern for %D{...}).
+    return map { $self->{formats}{ $_->[0] }->[1]->( $method, $msg, $_->[1] ) }
+        @{ $self->{args} };
 }
 
 sub DESTROY {
@@ -361,6 +390,129 @@ sub min_level {
     $self->{min_level}      = $map->{$name};
     $self->{min_level_name} = $name;
     return $name;
+}
+
+=head2 LOGWARN / LOGDIE / LOGCARP / LOGCLUCK / LOGCROAK / LOGCONFESS
+
+Log-and-C<warn>/C<die> convenience methods, modelled on
+L<Log::Log4perl>.  Each logs the message under a category
+(C<WARN> for the C<warn>/C<carp>/C<cluck> variants, C<FATAL> for the
+C<die>/C<croak>/C<confess> variants) and then raises it:
+
+    $log->LOGWARN("disk getting full");   # logs (WARN) then warn()s
+    $log->LOGDIE("out of disk");           # logs (FATAL) then die()s
+    $log->LOGCROAK("bad args");            # logs then Carp::croak()s
+
+The C<CARP>/C<CLUCK>/C<CROAK>/C<CONFESS> variants delegate to L<Carp>.
+These names are reserved and cannot be used as ordinary log categories.
+
+=cut
+
+# category logged under, and the action to raise afterwards
+my %LOG_AND = (
+    LOGWARN    => [ 'WARN',  sub { warn @_ }          ],
+    LOGDIE     => [ 'FATAL', sub { die @_ }           ],
+    LOGCARP    => [ 'WARN',  sub { Carp::carp @_ }     ],
+    LOGCLUCK   => [ 'WARN',  sub { Carp::cluck @_ }    ],
+    LOGCROAK   => [ 'FATAL', sub { Carp::croak @_ }    ],
+    LOGCONFESS => [ 'FATAL', sub { Carp::confess @_ }  ],
+);
+
+{
+    no strict 'refs';
+    for my $name ( keys %LOG_AND ) {
+        my ( $category, $action ) = @{ $LOG_AND{$name} };
+        *{$name} = sub {
+            my $self = shift;
+            $self->$category( @_ );
+            $action->( @_ );
+        };
+    }
+}
+
+=head1 EASY MODE
+
+Import the C<:easy> tag for a functional interface that logs through a
+single process-wide logger, so short scripts need not carry an object:
+
+    use Log::Tiny ':easy';
+    INFO("started");
+    ERROR("boom");
+    LOGDIE("fatal");
+
+The functions exported are C<TRACE>, C<DEBUG>, C<INFO>, C<WARN>,
+C<ERROR>, C<FATAL> and the C<LOG*> family above.  The default logger
+writes to C<STDERR> with the format C<[%D] [%c] %m%n>; call
+L</easy_init> to change the destination, format or level.
+
+=head2 easy_init
+
+Configure (or reconfigure) the C<:easy> logger.  Accepts either a
+positional C<($destination, $format)> pair or a hash reference:
+
+    Log::Tiny->easy_init('/var/log/app.log');
+    Log::Tiny->easy_init(\*STDOUT, '%D %m%n');
+    Log::Tiny->easy_init({ file => 'app.log', format => '%m%n',
+                           level => 'INFO' });
+
+The C<level> key (hash form) installs the standard
+C<TRACE E<lt> DEBUG E<lt> INFO E<lt> WARN E<lt> ERROR E<lt> FATAL> order
+and sets it as the L</min_level> threshold.  Returns the logger.
+
+=cut
+
+our @EASY_LEVELS = qw( TRACE DEBUG INFO WARN ERROR FATAL );
+
+sub easy_init {
+    my $class = shift;
+    my ( $dest, $format, $level );
+    if ( @_ == 1 && ref $_[0] eq 'HASH' ) {
+        my $o = $_[0];
+        $dest   = exists $o->{file} ? $o->{file}
+                : exists $o->{fh}   ? $o->{fh}
+                :                      \*STDERR;
+        $format = $o->{format} || $o->{layout};
+        $level  = $o->{level};
+    }
+    else {
+        ( $dest, $format ) = @_;
+        $dest = \*STDERR unless defined $dest;
+    }
+    $format = '[%D] [%c] %m%n' unless defined $format && length $format;
+    $easy = $class->new( $dest, $format )
+        or Carp::croak( "Log::Tiny easy_init failed: " . $class->errstr );
+    if ( defined $level ) {
+        $easy->levels( \@EASY_LEVELS );
+        $easy->min_level( $level );
+    }
+    return $easy;
+}
+
+# lazily build the default :easy logger (STDERR) on first use
+sub _easy {
+    $easy = __PACKAGE__->easy_init() unless defined $easy;
+    return $easy;
+}
+
+my %EASY_FN;
+{
+    no strict 'refs';
+    for my $lvl ( @EASY_LEVELS ) {
+        $EASY_FN{$lvl} = sub { _easy()->$lvl(@_) };
+    }
+    for my $name ( keys %LOG_AND ) {
+        $EASY_FN{$name} = sub { _easy()->$name(@_) };
+    }
+}
+
+sub import {
+    my $class = shift;
+    my $caller = caller;
+    no strict 'refs';
+    for my $tag ( @_ ) {
+        next unless $tag eq ':easy';
+        *{"${caller}::$_"} = $EASY_FN{$_} for keys %EASY_FN;
+    }
 }
 
 =head1 AUTHOR
