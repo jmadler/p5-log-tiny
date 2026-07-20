@@ -16,11 +16,11 @@ Log::Tiny - Log data with as little code as possible
 
 =head1 VERSION
 
-Version 1.1
+Version 1.2
 
 =cut
 
-$VERSION = '1.1';
+$VERSION = '1.2';
 $errstr = '';
 
 %formats = (
@@ -198,10 +198,14 @@ sub format {
         $self->{format} = shift;
     }
     $self->{args} = [];
-    # make real format
-    my $format = join '', keys %{ $self->{formats} };
-    $self->{format} =~ 
-      s/%(-?\d*(?:\.\d+)?)([$format])/_replace($self, $1, $2);/gex;
+    # Compile the log format into an sprintf template. Every %-sequence is
+    # rewritten here: known codes become real conversions (value captured
+    # in {args}); %% and any unrecognised code (e.g. %d) are escaped to a
+    # literal so the final sprintf in AUTOLOAD can never consume an argument
+    # for them. Matching any trailing char -- not just known codes -- is what
+    # makes unknown codes come out literally, as the POD promises.
+    $self->{format} =~
+      s/%(-?\d*(?:\.\d+)?)(.)/_replace($self, $1, $2);/gexs;
       # thanks, mschilli
     return $self->{format};
 }
@@ -209,7 +213,7 @@ sub format {
 sub _replace {
     my ( $self, $num, $op ) = @_;
     return '%%' if $op eq '%';
-    return "%%$op" unless defined $self->{formats}{$op};
+    return "%%$num$op" unless defined $self->{formats}{$op};
     push @{ $self->{args} }, $op;
     return "%$num" . $self->{formats}{$op}->[ 0 ];
 }
